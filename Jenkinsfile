@@ -4,6 +4,7 @@ pipeline {
     environment {
         DOCKERHUB_CREDENTIALS = credentials('fawaswebcastle-dockerhub')
         DOCKER_REPO = "fawaswebcastle/my-project"
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
         DEPLOY_HOST = "3.110.157.196"
         DEPLOY_USER = "ubuntu"
         DEPLOY_PATH = "/var/www/jenkins-test"
@@ -19,20 +20,33 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                docker build -t node-app .
-                """
+                script {
+                    echo "Building Docker image..."
+                    sh """
+                    docker build -t node-app:latest -t node-app:\$DOCKER_TAG .
+                    """
+                }
             }
         }
 
         stage('Docker Login & Push') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                    sh """
-                    echo \$PASS | docker login -u \$USER --password-stdin
-                    docker tag nextjs-app:latest \$DOCKER_REPO:latest
-                    docker push \$DOCKER_REPO:latest
-                    """
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'fawaswebcastle-dockerhub', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                        echo "Logging into Docker Hub..."
+                        sh """
+                        echo \$PASS | docker login -u \$USER --password-stdin
+                        """
+                        
+                        echo "Tagging and pushing image..."
+                        sh """
+                        docker tag node-app:latest \$DOCKER_REPO:latest
+                        docker tag node-app:latest \$DOCKER_REPO:\$DOCKER_TAG
+                        docker push \$DOCKER_REPO:latest
+                        docker push \$DOCKER_REPO:\$DOCKER_TAG
+                        echo "Successfully pushed \$DOCKER_REPO:latest and \$DOCKER_REPO:\$DOCKER_TAG"
+                        """
+                    }
                 }
             }
         }
