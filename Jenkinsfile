@@ -43,24 +43,45 @@ pipeline {
                         sh 'test -f Dockerfile || (echo "ERROR: Dockerfile not found!" && exit 1)'
                         sh 'test -f package.json || (echo "ERROR: package.json not found!" && exit 1)'
                         
-                        docker.withRegistry('https://index.docker.io/v1/', 'fawaswebcastle-dockerhub') {
-                            def customImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}", ".")
-                            
-                            echo "Image built successfully: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                            
-                            echo "Pushing image with tag: ${DOCKER_TAG}"
-                            customImage.push("${DOCKER_TAG}")
-                            
-                            echo "Pushing image with tag: latest"
-                            customImage.push("latest")
-                            
-                            echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
+                        // Login to Docker Hub using credentials
+                        withCredentials([usernamePassword(credentialsId: 'fawaswebcastle-dockerhub', 
+                                                         usernameVariable: 'DOCKER_USER', 
+                                                         passwordVariable: 'DOCKER_PASS')]) {
+                            sh '''
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            '''
                         }
+                        
+                        // Build Docker image
+                        echo "Building image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        sh """
+                            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                        """
+                        
+                        // Tag as latest
+                        sh """
+                            docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                        """
+                        
+                        echo "Image built successfully: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        
+                        // Push both tags
+                        echo "Pushing image with tag: ${DOCKER_TAG}"
+                        sh """
+                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        """
+                        
+                        echo "Pushing image with tag: latest"
+                        sh """
+                            docker push ${DOCKER_IMAGE}:latest
+                        """
+                        
+                        
+                        echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
+                        
                     } catch (Exception err) {
                         echo "ERROR: Docker build or push failed!"
                         echo "Error message: ${err.getMessage()}"
-                        echo "Error class: ${err.getClass()}"
-                        err.printStackTrace()
                         currentBuild.result = 'FAILURE'
                         error("Stopping pipeline because Docker build or push failed.")
                     }
@@ -72,15 +93,9 @@ pipeline {
             steps {
                 script {
                     echo "Testing Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                    def testImage = docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}")
-                    testImage.inside {
-                        sh 'echo "Container is running!"'
-                        sh 'node --version'
-                        sh 'npm --version'
-                        // Add your test commands here
-                        // sh 'npm test'
-                        // sh 'npm run lint'
-                    }
+                    sh """
+                        docker run --rm ${DOCKER_IMAGE}:${DOCKER_TAG} sh -c 'echo "Container is running!" && node --version && npm --version'
+                    """
                     echo "Docker image test completed successfully"
                 }
             }
