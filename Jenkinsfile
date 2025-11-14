@@ -1,135 +1,64 @@
 pipeline {
     agent any
-    
+
     environment {
-        NODE_VERSION = '18'
-        PROJECT_NAME = 'my-project'
         DOCKERHUB_CREDENTIALS = credentials('fawaswebcastle-dockerhub')
-        DOCKER_IMAGE = 'fawaswebcastle/my-project'
-        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        DOCKER_REPO = "fawaswebcastle/my-project"
+        DEPLOY_HOST = "3.110.157.196"
+        DEPLOY_USER = "ubuntu"
+        DEPLOY_PATH = "/var/www/jenkins-test"
     }
-    
+
     stages {
-        stage('Greet') {
-            steps {
-                echo '~k Hello from jenkins! This is my first pipeline'
-            }
-        }
-        
+
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/fawasam/jenkins.git'
             }
         }
-        
-        stage('Verify Docker') {
-            steps {
-                script {
-                    sh 'docker --version'
-                    sh 'docker info'
-                }
-            }
-        }
-        
+
         stage('Build Docker Image') {
             steps {
-                script {
-                    try {
-                        echo "Building Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                        echo "Docker registry: https://index.docker.io/v1/"
-                        echo "Credentials ID: fawaswebcastle-dockerhub"
-                        
-                        // Verify Dockerfile exists
-                        sh 'test -f Dockerfile || (echo "ERROR: Dockerfile not found!" && exit 1)'
-                        sh 'test -f package.json || (echo "ERROR: package.json not found!" && exit 1)'
-                        
-                        // Login to Docker Hub using credentials
-                        withCredentials([usernamePassword(credentialsId: 'fawaswebcastle-dockerhub', 
-                                                         usernameVariable: 'DOCKER_USER', 
-                                                         passwordVariable: 'DOCKER_PASS')]) {
-                            sh '''
-                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                            '''
-                        }
-                        
-                        // Build Docker image
-                        echo "Building image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                        sh """
-                            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        """
-                        
-                        // Tag as latest
-                        sh """
-                            docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                        """
-                        
-                        echo "Image built successfully: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                        
-                        // Push both tags
-                        echo "Pushing image with tag: ${DOCKER_TAG}"
-                        sh """
-                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                        """
-                        
-                        echo "Pushing image with tag: latest"
-                        sh """
-                            docker push ${DOCKER_IMAGE}:latest
-                        """
-                        
-                        
-                        echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
-                        
-                    } catch (Exception err) {
-                        echo "ERROR: Docker build or push failed!"
-                        echo "Error message: ${err.getMessage()}"
-                        currentBuild.result = 'FAILURE'
-                        error("Stopping pipeline because Docker build or push failed.")
-                    }
-                }
+                sh """
+                docker build -t node-app .
+                """
             }
         }
-        
-        stage('Test Docker Image') {
+
+        stage('Docker Login & Push') {
             steps {
-                script {
-                    echo "Testing Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
                     sh """
-                        docker run --rm ${DOCKER_IMAGE}:${DOCKER_TAG} sh -c 'echo "Container is running!" && node --version && npm --version'
+                    echo \$PASS | docker login -u \$USER --password-stdin
+                    docker tag nextjs-app:latest \$DOCKER_REPO:latest
+                    docker push \$DOCKER_REPO:latest
                     """
-                    echo "Docker image test completed successfully"
                 }
             }
         }
-        
-        stage('Deploy') {
+
+        stage('Deploy on EC2 through Docker Compose') {
             steps {
-                script {
-                    echo 'Deploying Docker container...'
-                    sh '''
-                        docker stop ${PROJECT_NAME} || true
-                        docker rm ${PROJECT_NAME} || true
-                        docker run -d --name ${PROJECT_NAME} \
-                            -p 3000:3000 \
-                            ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    '''
+                sshagent(['ec2-ssh-key']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST '
+                        cd $DEPLOY_PATH &&
+                        sudo docker-compose pull &&
+                        sudo docker-compose up -d &&
+                        sudo docker image prune -f
+                    '
+                    """
                 }
             }
         }
     }
-    
+
     post {
         success {
-            echo 'Pipeline succeeded!'
-            script {
-                // Clean up old images
-                sh 'docker image prune -f'
-            }
+            echo "🎉 Deployment successful!"
         }
         failure {
-            echo 'Pipeline failed!'
-        }
-        always {
-            cleanWs()
+            echo "❌ Deployment failed."
         }
     }
 }
