@@ -25,17 +25,23 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "Building Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                    docker.withRegistry('https://index.docker.io/v1/', 'fawaswebcastle-dockerhub') {
-                        def customImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
-                        
-                        echo "Pushing image with tag: ${DOCKER_TAG}"
-                        customImage.push()
-                        
-                        echo "Pushing image with tag: latest"
-                        customImage.push("latest")
-                        
-                        echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
+                    try {
+                        echo "Building Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        docker.withRegistry('https://index.docker.io/v1/', 'fawaswebcastle-dockerhub') {
+                            def customImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                            
+                            echo "Pushing image with tag: ${DOCKER_TAG}"
+                            customImage.push()
+                            
+                            echo "Pushing image with tag: latest"
+                            customImage.push("latest")
+                            
+                            echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
+                        }
+                    } catch (err) {
+                        echo "Docker build or push failed: ${err}"
+                        currentBuild.result = 'FAILURE'
+                        error("Stopping pipeline because Docker build or push failed.")
                     }
                 }
             }
