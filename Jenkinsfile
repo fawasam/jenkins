@@ -89,10 +89,26 @@ pipeline {
                                 ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST 'test -d $DEPLOY_PATH && echo "✅ Path exists" || echo "❌ Path does not exist - creating it..." && sudo mkdir -p $DEPLOY_PATH && sudo chown \$USER:\$USER $DEPLOY_PATH'
                             """
 
-                            // Check if docker-compose.yml exists
+                            // Check if docker-compose.yml exists and show its content
                             echo "🔍 Checking for docker-compose.yml..."
                             sh """
-                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST 'cd $DEPLOY_PATH && test -f docker-compose.yml && echo "✅ docker-compose.yml found" || echo "⚠️  docker-compose.yml not found"'
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
+                                    cd $DEPLOY_PATH
+                                    if [ -f docker-compose.yml ]; then
+                                        echo '✅ docker-compose.yml found'
+                                        echo '📄 docker-compose.yml content:'
+                                        cat docker-compose.yml
+                                    else
+                                        echo '⚠️  docker-compose.yml not found'
+                                        exit 1
+                                    fi
+                                "
+                            """
+                            
+                            // Show current containers before cleanup
+                            echo "🔍 Checking current containers..."
+                            sh """
+                                ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST 'echo "Current containers:" && sudo docker ps -a || true'
                             """
 
                             // Main deploy step
@@ -101,16 +117,38 @@ pipeline {
                                 ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
                                     set -e
                                     cd $DEPLOY_PATH
+                                    
+                                    echo '🔍 Validating docker-compose.yml...'
+                                    sudo docker-compose config > /dev/null 2>&1 || sudo docker compose config > /dev/null 2>&1 || {
+                                        echo '❌ docker-compose.yml validation failed!'
+                                        exit 1
+                                    }
+                                    echo '✅ docker-compose.yml is valid'
+                                    
+                                    echo '🛑 Stopping and removing old containers...'
+                                    sudo docker-compose down || sudo docker compose down || true
+                                    
+                                    echo '🧹 Cleaning up old containers...'
+                                    sudo docker container prune -f || true
+                                    
                                     echo '📥 Pulling latest images...'
                                     sudo docker-compose pull || sudo docker compose pull
+                                    
                                     echo '🚀 Starting containers...'
-                                    sudo docker-compose up -d || sudo docker compose up -d
-                                    echo '🧹 Cleaning up unused images...'
-                                    sudo docker image prune -f
+                                    sudo docker-compose up -d --remove-orphans || sudo docker compose up -d --remove-orphans
+                                    
+                                    echo '⏳ Waiting for containers to be healthy...'
+                                    sleep 5
+                                    
                                     echo '📊 Current containers:'
                                     sudo docker ps -a
+                                    
+                                    echo '🧹 Cleaning up unused images...'
+                                    sudo docker image prune -f
+                                    
                                     echo '📦 Current images:'
                                     sudo docker images | head -10
+                                    
                                     echo '✅ Deployment completed!'
                                 "
                             """
