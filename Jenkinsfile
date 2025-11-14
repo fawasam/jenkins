@@ -25,11 +25,17 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo 'Building Docker image...'
+                    echo "Building Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                     docker.withRegistry('https://index.docker.io/v1/', 'fawaswebcastle-dockerhub') {
                         def customImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                        
+                        echo "Pushing image with tag: ${DOCKER_TAG}"
                         customImage.push()
+                        
+                        echo "Pushing image with tag: latest"
                         customImage.push("latest")
+                        
+                        echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} to Docker Hub"
                     }
                 }
             }
@@ -38,14 +44,17 @@ pipeline {
         stage('Test Docker Image') {
             steps {
                 script {
-                    echo 'Testing Docker image...'
+                    echo "Testing Docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                     def testImage = docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}")
                     testImage.inside {
                         sh 'echo "Container is running!"'
+                        sh 'node --version'
+                        sh 'npm --version'
                         // Add your test commands here
                         // sh 'npm test'
                         // sh 'npm run lint'
                     }
+                    echo "Docker image test completed successfully"
                 }
             }
         }
