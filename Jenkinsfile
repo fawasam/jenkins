@@ -13,8 +13,8 @@ pipeline {
         DEPLOY_PATH = "/var/www/jenkins-test"
 
         // Optional: your domain and email for Let's Encrypt (set in Jenkins job as environment variables if available)
-        DOMAIN = "your.domain.com"
-        EMAIL = "admin@your.domain.com"
+        // DOMAIN = "your.domain.com"
+        // EMAIL = "admin@your.domain.com"
 
         // Blue/Green ports (on remote host)
         BLUE_PORT = "3001"
