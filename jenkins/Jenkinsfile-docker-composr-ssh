@@ -8,9 +8,6 @@ pipeline {
         DEPLOY_HOST = "3.110.157.196"
         DEPLOY_USER = "ubuntu"
         DEPLOY_PATH = "/var/www/jenkins-test"
-
-        BLUE_PORT = "3001"
-        GREEN_PORT = "3002"
     }
 
     stages {
@@ -70,20 +67,6 @@ pipeline {
                 }
             }
         }
-        ' | grep -q '^portainer$'; then
-sudo docker volume create portainer_data || true
-sudo docker run -d -p 9000:9000 --name portainer --restart=always \
--v /var/run/docker.sock:/var/run/docker.sock \
--v portainer_data:/data portainer/portainer-ce
-fi
-
-
-echo '✅ Portainer prep done'
-"
-'''
-}
-}
-
 
         stage('Deploy on EC2 through Docker Compose') {
             steps {
